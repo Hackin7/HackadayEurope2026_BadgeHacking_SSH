@@ -1,5 +1,5 @@
 # Copy WSL ~/.ssh/id_rsa to badge and set pubkey auth config.
-# Usage: .\install-wsl-rsa-to-badge.ps1 [-Port COM11]
+# Usage: .\scripts\deploy\install-wsl-rsa-to-badge.ps1 [-Port COM11] [-WifiPassword "..."]
 
 param(
     [string]$Port = "COM11",
@@ -9,21 +9,20 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Root = $PSScriptRoot
+. "$PSScriptRoot\..\_repo.ps1"
+
 $Tmp = Join-Path $env:TEMP "wsl_id_rsa_for_badge"
-$Firmware = Resolve-Path (Join-Path $Root "..\..\2025-Communicator_Badge\firmware")
 
 Write-Host "Exporting WSL id_rsa (LF)..."
 wsl -e bash -c "tr -d '\r' < ~/.ssh/id_rsa > /mnt/c/Users/zunmun/AppData/Local/Temp/wsl_id_rsa_for_badge"
 
 Write-Host "Testing WSL key against server..."
-wsl -e bash -c "ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa zunmun@34.28.97.3 'echo wsl-ok'"
+wsl -e bash -c "ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa zunmun@$SshHost 'echo wsl-ok'"
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "WSL ssh test failed - fix server authorized_keys before badge test."
 }
 
-Set-Location $Firmware
-& .\venv\Scripts\activate
+Enter-FirmwareVenv
 
 Write-Host "Uploading to badge $Port ..."
 cmd /c "mpremote connect $Port mkdir :/data 2>nul"
@@ -53,7 +52,4 @@ print("key", identity.key_file_hint("/data/ssh_id_rsa"))
 mpremote connect $Port run $cfgPy
 
 Write-Host ""
-Write-Host "Run on-badge test:"
-Write-Host "  mpremote connect $Port run repl_connect_test.py"
-Write-Host ""
-Write-Host 'If connect returns -6, reflash firmware with rsa-sha2 sign pref in modssh.c.'
+Write-Host "Test: mpremote connect $Port run $TestsDir\repl_connect_test.py"

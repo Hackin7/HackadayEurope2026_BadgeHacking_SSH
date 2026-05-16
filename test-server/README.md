@@ -61,15 +61,16 @@ From repo root, with server running:
 
 ```powershell
 cd badgehacking\ssh
-.\run-local-ssh-test.ps1 -PcIp <PC_IP> -Port COM11
+.\scripts\test\run-local-ssh-test.ps1 -PcIp <PC_IP> -Port COM11
+# or: .\run-ssh-rw-test.ps1 -Port COM11
 ```
 
-Or set `PC_HOST` in `repl_password_local_test.py` and:
+Or set `PC_HOST` in `tests/repl_password_local_test.py` and:
 
 ```powershell
 cd 2025-Communicator_Badge\firmware
 .\venv\Scripts\activate
-mpremote connect COM11 run ..\..\badgehacking\ssh\repl_password_local_test.py
+mpremote connect COM11 run ..\..\badgehacking\ssh\tests\repl_password_local_test.py
 ```
 
 Success: `connect 0`, shell output contains `badge-ok`.

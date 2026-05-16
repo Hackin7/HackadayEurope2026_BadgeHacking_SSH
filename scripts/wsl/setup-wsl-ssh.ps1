@@ -9,8 +9,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$WslScript = Join-Path $Root "scripts\setup-wsl-openssh.sh"
+$Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$WslScript = Join-Path $PSScriptRoot "setup-wsl-openssh.sh"
 
 function Get-WslIPv4 {
     $ip = (wsl -d $Distro -e bash -lc "hostname -I | awk '{print `$1}'").Trim()

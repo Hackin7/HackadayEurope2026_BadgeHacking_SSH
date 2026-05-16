@@ -1,5 +1,5 @@
-# Set badge config for local Paramiko SSH app test.
-# Usage: .\configure-local-test.ps1 [-PcIp 10.86.82.124] [-Port COM11]
+# Set badge config for local Paramiko SSH test (port 2222).
+# Usage: .\scripts\deploy\configure-local-test.ps1 [-Port COM11] [-WifiPassword "..."]
 
 param(
     [string]$PcIp = "",
@@ -8,8 +8,8 @@ param(
     [string]$WifiPassword = ""
 )
 
-$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Firmware = Resolve-Path (Join-Path $Root "..\..\2025-Communicator_Badge\firmware")
+$ErrorActionPreference = "Stop"
+. "$PSScriptRoot\..\_repo.ps1"
 
 if (-not $PcIp) {
     $PcIp = (Get-NetIPConfiguration -ErrorAction SilentlyContinue |
@@ -46,7 +46,6 @@ print("config ok", "$PcIp", "wifi", "$WifiSsid")
 "@
 [System.IO.File]::WriteAllText($cfgPy, $cfgBody.TrimStart() + "`n")
 
-Set-Location $Firmware
-& .\venv\Scripts\activate
+Enter-FirmwareVenv
 mpremote connect $Port run $cfgPy
-Write-Host "Open SSH app on badge: F4 until menubar shows Pass, then F1 Conn."
+Write-Host "Badge SSH app: F4 Pass, F1 Conn. Or run scripts\test\run-ssh-rw-test.ps1"

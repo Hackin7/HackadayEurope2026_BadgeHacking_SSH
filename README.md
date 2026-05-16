@@ -1,58 +1,87 @@
-# Hackaday Badge SSH Client
+# Hackaday Communicator Badge — SSH client
 
-Git home for the Communicator Badge SSH app, native `ssh` module (libssh2), and deploy scripts.
+MicroPython SSH terminal app and native `ssh` module (libssh2) for the [Hackaday Europe Communicator Badge](https://github.com/Hackaday/2025-Communicator_Badge).
 
-## Repository layout
+## Repository tree
 
-| Path | Purpose |
-|------|---------|
-| `badge/apps/ssh/` | MicroPython SSH app (deploy to badge) |
-| `badge/hardware/wifi.py` | WiFi helper used by SSH |
-| `micropython-ssh/` | C `ssh` module for custom firmware |
-| `push-to-badge.ps1` | Deploy app over USB (mpremote) |
-| `install-key.ps1` | Copy private key to `/data/ssh_id_ed25519` |
-| `sync-to-firmware.ps1` | Copy `badge/` into upstream firmware tree |
-
-Upstream firmware: `2025-Communicator_Badge/firmware/badge/`
+```
+.
+├── README.md
+├── badge/                      # Deploy to badge (synced into upstream firmware/badge/)
+│   ├── apps/
+│   │   ├── ssh/                # SSH app package
+│   │   │   ├── app.py          # UI + keyboard
+│   │   │   ├── backend.py      # native ssh / TCP fallback
+│   │   │   ├── worker.py       # Session thread
+│   │   │   ├── terminal.py     # Scrollback display
+│   │   │   └── ...
+│   │   └── ssh_client.py       # App menu entry (APP_NAME = "SSH")
+│   └── hardware/
+│       └── wifi.py             # WiFi STA helper
+├── micropython-ssh/            # C module: import ssh
+├── patches/                    # GCC thumb patch, upstream notes
+├── vendor/                     # libssh2_esp32 (clone before build, gitignored)
+├── build/                      # Firmware .bin output (gitignored)
+├── docs/
+│   ├── BUILD.md                # Custom firmware
+│   ├── DEPLOY.md               # mpremote / flash
+│   └── UPSTREAM.md             # Files outside this repo
+├── scripts/
+│   ├── deploy/                 # push, flash, keys, config
+│   ├── build/                  # WSL firmware build
+│   ├── test/                   # PC-side test runners
+│   └── wsl/                    # Optional WSL OpenSSH helpers
+├── tests/                      # On-badge REPL test scripts
+└── test-server/                # Local Paramiko server (port 2222)
+```
 
 ## Quick start
 
+**Prerequisites:** Badge on USB, [upstream `firmware/venv`](../../2025-Communicator_Badge/firmware) with `mpremote`, custom firmware with `import ssh` (see [docs/BUILD.md](docs/BUILD.md)).
+
 ```powershell
-# Deploy app
-.\push-to-badge.ps1 COM11
+# Deploy full badge filesystem (after sync to upstream tree)
+.\scripts\deploy\push-to-badge.ps1 -Port COM11
 
-# Install your SSH private key (OpenSSH PEM)
-.\install-key.ps1 COM11 $env:USERPROFILE\.ssh\id_ed25519
+# Install private key for pubkey auth
+.\scripts\deploy\install-key.ps1 -Port COM11
 
-# On badge: Apps → SSH → F4 until "Auth: pubkey" → F1 Connect
+# On badge: Apps → SSH → F4 (pubkey) → F1 Connect
 ```
+
+**Local test** (PC Paramiko server, same WiFi as badge):
+
+```powershell
+.\scripts\deploy\configure-local-test.ps1 -Port COM11 -WifiPassword "your-pass"
+.\scripts\test\run-ssh-rw-test.ps1 -Port COM11
+```
+
+## Documentation
+
+| Doc | Topic |
+|-----|--------|
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Upload app, keys, flash workflow |
+| [docs/BUILD.md](docs/BUILD.md) | Firmware with native `ssh` |
+| [docs/UPSTREAM.md](docs/UPSTREAM.md) | Communicator Badge files you still need |
+| [test-server/README.md](test-server/README.md) | Local password SSH server |
+
+## Root shortcuts
+
+These forward to `scripts/`:
+
+| Script | Forwards to |
+|--------|-------------|
+| `push-to-badge.ps1` | `scripts/deploy/push-to-badge.ps1` |
+| `build-firmware.ps1` | `scripts/build/build-firmware.ps1` |
+| `run-ssh-rw-test.ps1` | `scripts/test/run-ssh-rw-test.ps1` |
 
 ## Authentication
 
-- **Password** (default): set user + password in **F3 Edit**.
-- **Public key**: **F4** toggles `password` / `pubkey`. Private key file on badge (default `/data/ssh_id_ed25519`). Optional key passphrase in config key `ssh_key_passphrase` (set via REPL/config for now).
+- **Password:** F3 edit user/password, F4 shows `Pass`, F1 connect.
+- **Pubkey:** Copy private key to `/data/ssh_id_ed25519` (or set `ssh_key_path`), F4 until `pubkey`, F1 connect.
 
-Public key auth requires firmware built with `micropython-ssh` (`import ssh` and `connect(..., private_key=...)`). Stock firmware only supports TCP banner probe.
+Requires custom firmware for real SSH (not just TCP probe). Keys: OpenSSH PEM or RSA PEM.
 
-Supported keys: OpenSSH PEM (`BEGIN OPENSSH PRIVATE KEY` or `BEGIN RSA PRIVATE KEY`).
+## License
 
-## Custom firmware
-
-See `SSH_BUILD_NOTES.md`. After flashing, deploy the app with `push-to-badge.ps1`.
-
-## Sync to upstream firmware
-
-```powershell
-.\sync-to-firmware.ps1
-```
-
-Also merge `ssh_auth` / `ssh_key_path` defaults in `hardware/badge.py` (already in upstream if you pulled recent changes).
-
-## Vendor libssh2
-
-```bash
-git submodule add https://github.com/warmcat/libssh2-esp32 vendor/libssh2_esp32
-# or clone manually into vendor/libssh2_esp32
-```
-
-`vendor/` is gitignored; clone before building firmware.
+Match upstream Communicator Badge and component licenses (libssh2, LVGL, MicroPython).
