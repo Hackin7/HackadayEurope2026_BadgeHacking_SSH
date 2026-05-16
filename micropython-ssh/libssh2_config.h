@@ -1,0 +1,16 @@
+#ifndef LIBSSH2_CONFIG_H
+#define LIBSSH2_CONFIG_H
+
+#define HAVE_UNISTD_H 1
+#define HAVE_SYS_TIME_H 1
+#define HAVE_SYS_SOCKET_H 1
+#define HAVE_NETINET_IN_H 1
+#define HAVE_ARPA_INET_H 1
+#define HAVE_SELECT 1
+#define HAVE_SNPRINTF 1
+
+#define LIBSSH2_MBEDTLS 1
+#define LIBSSH2_HAVE_NONBLOCKING 1
+#define LIBSSH2_DH_GEX_NEW 1
+
+#endif
