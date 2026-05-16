@@ -3,7 +3,9 @@
 
 param(
     [string]$PcIp = "",
-    [string]$Port = "COM11"
+    [string]$Port = "COM11",
+    [string]$WifiSsid = "zfliphack",
+    [string]$WifiPassword = ""
 )
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -18,22 +20,33 @@ if (-not $PcIp) {
     if (-not $PcIp) { Write-Error "Pass -PcIp"; exit 1 }
 }
 
-$py = @"
+if (-not $WifiPassword -and $env:BADGE_WIFI_PASSWORD) {
+    $WifiPassword = $env:BADGE_WIFI_PASSWORD
+}
+
+$cfgPy = Join-Path $env:TEMP "badge_local_ssh_config.py"
+$wifiLine = ""
+if ($WifiPassword) {
+    $wifiLine = "    (`"wifi_password`", `"$WifiPassword`"),`n"
+}
+$cfgBody = @"
 from hardware.datafile import Config
 c = Config()
 for k, v in [
-    ('ssh_host', '$PcIp'),
-    ('ssh_port', '2222'),
-    ('ssh_user', 'badge'),
-    ('ssh_password', 'badge'),
-    ('ssh_auth', 'password'),
+    ("wifi_ssid", "$WifiSsid"),
+$wifiLine    ("ssh_host", "$PcIp"),
+    ("ssh_port", "2222"),
+    ("ssh_user", "badge"),
+    ("ssh_password", "badge"),
+    ("ssh_auth", "password"),
 ]:
-    c.set(k, v.encode())
+    c.set(k.encode(), v.encode())
 c.flush()
-print('config ok', '$PcIp', '2222', 'badge')
+print("config ok", "$PcIp", "wifi", "$WifiSsid")
 "@
+[System.IO.File]::WriteAllText($cfgPy, $cfgBody.TrimStart() + "`n")
 
 Set-Location $Firmware
 & .\venv\Scripts\activate
-mpremote connect $Port exec $py
+mpremote connect $Port run $cfgPy
 Write-Host "Open SSH app on badge: F4 until menubar shows Pass, then F1 Conn."

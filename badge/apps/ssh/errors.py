@@ -20,7 +20,8 @@ SSH_CONNECT_ERRORS = {
   -3: "SSH: session init failed",
   -4: "SSH: handshake failed",
   -5: "SSH: login failed (user/password)",
-  -6: "SSH: public key auth failed",
+  -6: "SSH: public key auth failed (user/key/server authorized_keys?)",
+  -7: "SSH: private key unreadable (passphrase or format)",
 }
 
 

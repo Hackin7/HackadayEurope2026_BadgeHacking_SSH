@@ -1,0 +1,17 @@
+﻿REPL SSH test — 2026-05-16 COM11
+
+WiFi
+  SSID in config: Hackaday
+  Scan: Hackaday visible (-43 dBm)
+  After scan / connect: 192.168.0.122, connected OK
+  wifi.connect() from cold start had failed with status 202 (needs AP in range or retry)
+
+TCP port 22 (socket only — not full SSH auth)
+  sfo2.tmate.io: OK — banner b'SSH-2.0-tmate\r\n'
+  Config host 'USER@sfo2.tmate.io': DNS fail -202 (invalid hostname for getaddrinfo)
+  Fix: set ssh_host=sfo2.tmate.io and ssh_user=<tmate token> in SSH app Edit
+
+Native ssh module: MISSING (stock firmware)
+  Full SSH login/shell requires custom firmware (badgehacking/ssh/SSH_BUILD_NOTES.md)
+
+Script: badgehacking/ssh/repl_ssh_test.py

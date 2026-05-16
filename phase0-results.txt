@@ -1,0 +1,5 @@
+﻿Hackaday Badge phase0_check - 2026-05-16
+Port: COM11
+network socket ssl _thread asyncio: OK
+ssh: MISSING
+TCP banner: -202 without WiFi

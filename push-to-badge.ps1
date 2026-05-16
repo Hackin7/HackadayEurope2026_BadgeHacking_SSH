@@ -1,23 +1,32 @@
-# Deploy SSH app from this repo to connected badge.
-# Usage: .\push-to-badge.ps1 COM11
+# Sync SSH sources and upload full badge filesystem (includes SSH app).
+# Usage: .\push-to-badge.ps1 [-Port COM11] [-Reset]
 
 param(
-  [string]$Port = "COM11"
+    [string]$Port = "COM11",
+    [switch]$Reset
 )
 
-$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Badge = Join-Path $Root "badge"
+$ErrorActionPreference = "Stop"
+$Root = $PSScriptRoot
 $Firmware = Resolve-Path (Join-Path $Root "..\..\2025-Communicator_Badge\firmware")
+$BadgeDir = Join-Path $Firmware "badge"
+
+& (Join-Path $Root "sync-to-firmware.ps1")
 
 Set-Location $Firmware
 & .\venv\Scripts\activate
 
-$SshDir = Join-Path $Badge "apps\ssh"
-mpremote connect $Port mkdir :apps/ssh 2>$null
-Get-ChildItem "$SshDir\*.py" | ForEach-Object {
-  mpremote connect $Port cp $_.FullName ":apps/ssh/$($_.Name)"
+Write-Host "Uploading badge filesystem to $Port (all apps + hardware + net)..."
+Push-Location $BadgeDir
+try {
+    mpremote connect $Port cp -r . :
+} finally {
+    Pop-Location
 }
-mpremote connect $Port cp "$Badge\apps\ssh_client.py" :apps/ssh_client.py
-mpremote connect $Port cp "$Badge\hardware\wifi.py" :hardware/wifi.py
-mpremote connect $Port reset
-Write-Host "Done. SSH app: F4 toggles password/pubkey auth."
+
+if ($Reset) {
+    mpremote connect $Port reset
+}
+
+Write-Host "Done. Files on badge:"
+mpremote connect $Port exec "import os; print(os.listdir('/'))"

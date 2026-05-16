@@ -147,6 +147,12 @@ static int ssh_do_connect(const char *host, int port, const char *user,
         fingerprint_to_hex((const unsigned char *)fingerprint, 32);
     }
 
+    /* Match OpenSSH: sign with rsa-sha2-512/256 (not legacy ssh-rsa only). */
+    if (privkey && privkey_len > 0) {
+        libssh2_session_method_pref(g_session, LIBSSH2_METHOD_SIGN_ALGO,
+            "rsa-sha2-512,rsa-sha2-256,ssh-rsa");
+    }
+
     rc = ssh_userauth(g_session, user, pass, privkey, privkey_len, key_pass);
     if (rc) {
         ssh_cleanup();
