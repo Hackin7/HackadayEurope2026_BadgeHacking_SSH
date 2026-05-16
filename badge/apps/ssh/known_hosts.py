@@ -7,7 +7,18 @@ def _line_key(host: str, port: int) -> str:
   return f"{host}:{port}"
 
 
-def lookup(host: str, port: int) -> str | None:
+def _read_lines():
+  try:
+    with open(PATH, "r") as f:
+      text = f.read()
+      if not text:
+        return []
+      return text.splitlines(True)
+  except OSError:
+    return []
+
+
+def lookup(host: str, port: int):
   key = _line_key(host, port)
   try:
     with open(PATH, "r") as f:
@@ -26,12 +37,7 @@ def lookup(host: str, port: int) -> str | None:
 def trust(host: str, port: int, fingerprint: str) -> None:
   key = _line_key(host, port)
   fp = fingerprint.strip()
-  lines = []
-  try:
-    with open(PATH, "r") as f:
-      lines = f.readlines()
-  except OSError:
-    pass
+  lines = _read_lines()
   out = []
   found = False
   for line in lines:
@@ -42,8 +48,12 @@ def trust(host: str, port: int, fingerprint: str) -> None:
       out.append(line)
   if not found:
     out.append(f"{key} {fp}\n")
-  with open(PATH, "w") as f:
-    f.writelines(out)
+  try:
+    with open(PATH, "w") as f:
+      for line in out:
+        f.write(line)
+  except OSError:
+    pass
 
 
 def verify(host: str, port: int, fingerprint: str) -> bool:

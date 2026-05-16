@@ -26,7 +26,7 @@ def _cfg_str(badge, key: str, default: str = "") -> str:
 class SSHClientApp(BaseApp):
   def __init__(self, name: str, badge):
     super().__init__(name, badge)
-    self.foreground_sleep_ms = 25
+    self.foreground_sleep_ms = 15
     self.background_sleep_ms = 500
     self.state = states.MENU
     self.page = None
@@ -48,6 +48,7 @@ class SSHClientApp(BaseApp):
     self.event_queue: deque = deque([], 16)
     self.session_handle = None
     self._connect_kwargs = {}
+    self._connect_note = ""
     self._load_config()
 
   def _load_config(self):
@@ -56,16 +57,19 @@ class SSHClientApp(BaseApp):
     self.user = _cfg_str(self.badge, "ssh_user")
     if "@" in self.host and not self.user:
       self.user, _, self.host = self.host.partition("@")
+    _, self.host, self.port = backend.parse_host_port(self.host, self.port)
     self.wifi_ssid = _cfg_str(self.badge, "wifi_ssid")
     self.wifi_password = _cfg_str(self.badge, "wifi_password")
     self.ssh_auth = identity.normalize_auth(_cfg_str(self.badge, "ssh_auth", "password"))
     self.ssh_key_path = _cfg_str(self.badge, "ssh_key_path", identity.DEFAULT_KEY_PATH)
     self.ssh_key_passphrase = _cfg_str(self.badge, "ssh_key_passphrase")
+    self.password = _cfg_str(self.badge, "ssh_password")
 
   def _save_ssh_config(self):
     self.badge.config.set("ssh_host", self.host.encode())
     self.badge.config.set("ssh_port", str(self.port).encode())
     self.badge.config.set("ssh_user", self.user.encode())
+    self.badge.config.set("ssh_password", self.password.encode())
     self.badge.config.set("ssh_auth", self.ssh_auth.encode())
     self.badge.config.set("ssh_key_path", self.ssh_key_path.encode())
     self.badge.config.set("ssh_key_passphrase", self.ssh_key_passphrase.encode())
@@ -74,17 +78,21 @@ class SSHClientApp(BaseApp):
   def _auth_label(self) -> str:
     return "pubkey" if self.ssh_auth == identity.AUTH_PUBKEY else "password"
 
+  def _f4_auth_switch_label(self) -> str:
+    """Menubar F4: label the auth mode you switch to when pressed."""
+    return "Key" if self.ssh_auth == identity.AUTH_PASSWORD else "Pass"
+
   def _prepare_connect(self):
-    kw, err = identity.build_connect_kwargs(
+    kw, note = identity.resolve_connect_kwargs(
       self.ssh_auth,
       self.password,
       self.ssh_key_path,
       self.ssh_key_passphrase,
+      backend.has_native_ssh(),
     )
-    if err:
-      return None, err
-    if self.ssh_auth == identity.AUTH_PUBKEY and not backend.has_native_ssh():
-      return None, "pubkey needs custom firmware"
+    if not kw:
+      return None, note or "auth failed"
+    self._connect_note = note or ""
     return kw, None
 
   def _save_wifi_config(self):
@@ -116,13 +124,14 @@ class SSHClientApp(BaseApp):
 
   def _build_menu_screen(self):
     self.page = Page()
-    self.page.create_infobar(("SSH", "F1 Conn F4 Auth"))
+    f4 = self._f4_auth_switch_label()
+    self.page.create_infobar(("SSH", f"F1 Conn  F4→{f4}"))
     self.page.create_content()
     self.term_label = lvgl.label(self.page.content)
     self.term_label.set_width(lvgl.pct(100))
     self.term_label.set_style_text_font(lvgl.font_montserrat_16, 0)
     self.term_label.set_text(self._menu_text())
-    self.page.create_menubar(["Conn", "WiFi", "Edit", "", "Home"])
+    self.page.create_menubar(["Conn", "WiFi", "Edit", f4, "Home"])
     self.page.replace_screen()
 
   def _build_terminal_screen(self, title: str, footer: str):
@@ -210,6 +219,9 @@ class SSHClientApp(BaseApp):
       elif kind == "banner":
         self.state = states.SESSION
         self._build_terminal_screen("TCP", "banner only")
+        while self.rx_queue:
+          self.terminal.feed(self.rx_queue.popleft())
+        self._refresh_terminal()
       elif kind == "exec":
         self.state = states.EXEC
         self.terminal.clear()
@@ -254,6 +266,8 @@ class SSHClientApp(BaseApp):
     self._wifi_pending = True
     self._ssh_worker_started = False
     self._push_connect_step("WiFi: connecting...")
+    if self._connect_note:
+      self._push_connect_step(self._connect_note)
     self._build_connecting_screen()
     wifi.begin_connect(self.wifi_ssid, self.wifi_password)
 
@@ -372,11 +386,13 @@ class SSHClientApp(BaseApp):
     elif self.state in (states.SESSION, states.EXEC):
       while self.rx_queue:
         self.terminal.feed(self.rx_queue.popleft())
-      self._refresh_terminal()
       key = self.badge.keyboard.read_key()
       data = key_to_bytes(key, self.badge.keyboard)
       if data and self.session_handle:
+        if self.state == states.SESSION:
+          self.terminal.note_tx(data)
         self.tx_queue.append(data)
+      self._refresh_terminal()
 
     elif self.state == states.CONNECTING:
       if self._wifi_pending:

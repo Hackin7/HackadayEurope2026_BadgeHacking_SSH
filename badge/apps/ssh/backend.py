@@ -13,16 +13,43 @@ def has_native_ssh() -> bool:
   return _HAS_NATIVE
 
 
-def tcp_banner(host: str, port: int, timeout: int = 10) -> bytes:
+def parse_host_port(host: str, port: int):
+  """Split user@host:port from config mistakes."""
+  user = ""
+  if "@" in host:
+    user, _, host = host.partition("@")
+  if ":" in host:
+    h, _, p = host.rpartition(":")
+    if p.isdigit():
+      host = h
+      port = int(p)
+  return user, host.strip(), port
+
+
+def tcp_banner(host: str, port: int, timeout: int = 15) -> bytes:
   import socket
 
-  addr = socket.getaddrinfo(host, port)[0][-1]
-  s = socket.socket()
-  s.settimeout(timeout)
-  s.connect(addr)
-  data = s.recv(128)
-  s.close()
-  return data
+  _, host, port = parse_host_port(host, port)
+  addrs = socket.getaddrinfo(host, port)
+  last_err = None
+  for info in addrs:
+    addr = info[-1]
+    s = socket.socket()
+    try:
+      s.settimeout(timeout)
+      s.connect(addr)
+      data = s.recv(256)
+      s.close()
+      return data
+    except OSError as e:
+      last_err = e
+      try:
+        s.close()
+      except OSError:
+        pass
+  if last_err:
+    raise last_err
+  raise OSError("no address")
 
 
 def _native_connect(host, port, user, password="", private_key=None, key_passphrase=""):
@@ -68,6 +95,22 @@ def exec_command(
     except TypeError:
       return (-6, b"exec", b"pubkey needs new firmware")
   return _ssh_native.exec(url, user, password, port=port)  # type: ignore
+
+
+def _native_write(data: bytes) -> int:
+  """Send bytes on the SSH channel (handles legacy modssh.write arity)."""
+  if not _HAS_NATIVE or not data:
+    return 0
+  try:
+    return _ssh_native.write(data)
+  except TypeError:
+    pass
+  for extra in (None, _ssh_native):
+    try:
+      return _ssh_native.write(extra, data)
+    except TypeError:
+      continue
+  return 0
 
 
 class Session:
@@ -116,8 +159,7 @@ class Session:
     return _ssh_native.read(max_len)
 
   def write(self, data: bytes) -> None:
-    if _HAS_NATIVE and data:
-      _ssh_native.write(data)
+    _native_write(data)
 
   def close(self) -> None:
     if _HAS_NATIVE:

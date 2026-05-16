@@ -59,9 +59,29 @@ if(DEFINED IDF_PATH)
     )
 endif()
 
+# QSTR preprocessing (makeqstrdefs.py) only sees MICROPY_CPP_*_EXTRA, not INTERFACE defs.
+# QSTR pass uses host preprocessor flags; libssh2 needs ESP-IDF detected.
+list(APPEND MICROPY_CPP_DEF_EXTRA
+    ESP_IDF=1
+    IDF_VER=1
+    LIBSSH2_MBEDTLS=1
+    HAVE_CONFIG_H=1
+)
+list(APPEND MICROPY_CPP_INC_EXTRA
+    ${LIBSSH2_ESP_DIR}/include
+    ${LIBSSH2_ESP_DIR}/src
+    ${LIBSSH2_ESP_DIR}
+)
+if(DEFINED IDF_PATH)
+    list(APPEND MICROPY_CPP_INC_EXTRA
+        ${IDF_PATH}/components/mbedtls/mbedtls/include
+        ${IDF_PATH}/components/mbedtls/port/include
+    )
+endif()
+
 target_compile_definitions(usermod_ssh INTERFACE
-    ESP_PLATFORM=1
-    IDF_VER=0x050500
+    ESP_IDF=1
+    IDF_VER=1
     LIBSSH2_MBEDTLS=1
     HAVE_CONFIG_H=1
 )

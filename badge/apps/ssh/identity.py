@@ -24,23 +24,48 @@ def read_private_key(path: str):
   return data
 
 
-def build_connect_kwargs(
+def _password_kwargs(password: str, key_passphrase: str = ""):
+  return {
+    "password": password or "",
+    "private_key": None,
+    "key_passphrase": key_passphrase or "",
+  }
+
+
+def resolve_connect_kwargs(
   auth_mode: str,
   password: str,
   key_path: str,
   key_passphrase: str,
+  has_native_ssh: bool,
 ):
-  """Return (kwargs for backend.Session.connect, error_message)."""
+  """Pick auth for connect; fall back when pubkey unavailable on this firmware."""
   auth_mode = normalize_auth(auth_mode)
-  if auth_mode == AUTH_PUBKEY:
-    pem = read_private_key(key_path or DEFAULT_KEY_PATH)
-    if not pem:
-      path = key_path or DEFAULT_KEY_PATH
-      return {}, f"SSH key not found: {path}"
-    kw = {
-      "password": "",
-      "private_key": pem,
-      "key_passphrase": key_passphrase or "",
-    }
-    return kw, None
-  return {"password": password or "", "private_key": None, "key_passphrase": ""}, None
+  path = key_path or DEFAULT_KEY_PATH
+
+  if has_native_ssh and auth_mode == AUTH_PUBKEY:
+    pem = read_private_key(path)
+    if pem:
+      return {
+        "password": "",
+        "private_key": pem,
+        "key_passphrase": key_passphrase or "",
+      }, None
+    if password:
+      return _password_kwargs(password, key_passphrase), "using password (no key file)"
+    return {}, f"SSH key not found: {path}"
+
+  if has_native_ssh:
+    if not password:
+      return {}, "SSH password not set (F3 Edit)"
+    return _password_kwargs(password, key_passphrase), None
+
+  # Stock firmware: TCP banner probe only (no SSH auth on device).
+  return _password_kwargs("", ""), None
+
+
+# Backward-compatible name
+def build_connect_kwargs(auth_mode, password, key_path, key_passphrase):
+  return resolve_connect_kwargs(
+    auth_mode, password, key_path, key_passphrase, False
+  )

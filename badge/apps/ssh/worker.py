@@ -41,6 +41,34 @@ def _wait_trust(handle, host, port, fp, event_queue, timeout_ms=120000):
   return False
 
 
+def _pty_session_loop(session, handle, tx_queue, rx_queue):
+  """Interactive shell I/O.
+
+  libssh2 read() blocks in blocking mode and would stall TX if done in one loop.
+  Use a dedicated read thread so the main loop can always drain tx_queue.
+  """
+
+  def read_loop():
+    try:
+      while handle.running and not handle.stop_flag:
+        data = session.read(256)
+        if data:
+          rx_queue.append(data)
+        time.sleep_ms(1)
+    except OSError:
+      pass
+
+  if _thread:
+    _thread.start_new_thread(read_loop, ())
+  else:
+    read_loop()
+
+  while handle.running and not handle.stop_flag:
+    while tx_queue:
+      session.write(tx_queue.popleft())
+    time.sleep_ms(20)
+
+
 def _worker(
   host,
   port,
@@ -103,13 +131,7 @@ def _worker(
       session.open_shell(COLS, ROWS)
       event_queue.append(("session", "pty"))
       _progress(event_queue, "Connected")
-      while handle.running and not handle.stop_flag:
-        data = session.read(256)
-        if data:
-          rx_queue.append(data)
-        while tx_queue:
-          session.write(tx_queue.pop(0))
-        time.sleep_ms(20)
+      _pty_session_loop(session, handle, tx_queue, rx_queue)
       session.close()
       event_queue.append(("done", None))
       return
@@ -135,9 +157,6 @@ def _worker(
       event_queue.append(("exec", res))
       _progress(event_queue, "Command done")
     else:
-      if private_key:
-        event_queue.append(("error", "pubkey needs custom firmware"))
-        return
       _progress(event_queue, "TCP: waiting for banner...")
       try:
         banner = backend.tcp_banner(host, port)

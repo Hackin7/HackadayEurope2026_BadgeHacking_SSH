@@ -12,6 +12,7 @@
 #include "py/mpthread.h"
 
 #include "lwip/sockets.h"
+#include "lwip/netdb.h"
 #include "libssh2.h"
 
 #define SSH_BODY_MAX 4096
@@ -155,7 +156,7 @@ static int ssh_do_connect(const char *host, int port, const char *user,
     return 0;
 }
 
-STATIC mp_obj_t ssh_connect_mp(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+static mp_obj_t ssh_connect_mp(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
     enum { ARG_host, ARG_port, ARG_user, ARG_pass, ARG_private_key, ARG_key_passphrase };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_host, MP_ARG_REQUIRED | MP_ARG_OBJ, { .u_obj = MP_OBJ_NULL } },
@@ -189,7 +190,7 @@ STATIC mp_obj_t ssh_connect_mp(size_t n_args, const mp_obj_t *pos_args, mp_map_t
         mp_get_buffer_raise(args[ARG_private_key].u_obj, &keybuf, MP_BUFFER_READ);
         if (keybuf.len > 0) {
             if (keybuf.len > SSH_KEY_MAX) {
-                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "private key too large"));
+                mp_raise_ValueError(MP_ERROR_TEXT("private key too large"));
             }
             priv = (const char *)keybuf.buf;
             priv_len = keybuf.len;
@@ -202,15 +203,14 @@ STATIC mp_obj_t ssh_connect_mp(size_t n_args, const mp_obj_t *pos_args, mp_map_t
 
     return mp_obj_new_int(err);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(ssh_connect_obj, 4, ssh_connect_mp);
+static MP_DEFINE_CONST_FUN_OBJ_KW(ssh_connect_obj, 4, ssh_connect_mp);
 
-STATIC mp_obj_t ssh_get_fingerprint(mp_obj_t self_in) {
-    (void)self_in;
+static mp_obj_t ssh_get_fingerprint(void) {
     return mp_obj_new_str(g_fp_hex, strlen(g_fp_hex));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_0(ssh_get_fingerprint_obj, ssh_get_fingerprint);
+static MP_DEFINE_CONST_FUN_OBJ_0(ssh_get_fingerprint_obj, ssh_get_fingerprint);
 
-STATIC mp_obj_t ssh_open_shell_mp(size_t n_args, const mp_obj_t *args) {
+static mp_obj_t ssh_open_shell_mp(size_t n_args, const mp_obj_t *args) {
     int cols = mp_obj_get_int(args[0]);
     int rows = mp_obj_get_int(args[1]);
     int rc;
@@ -241,12 +241,16 @@ STATIC mp_obj_t ssh_open_shell_mp(size_t n_args, const mp_obj_t *args) {
         return mp_obj_new_int(-3);
     }
     rc = libssh2_channel_shell(g_channel);
+    if (!rc) {
+        /* Non-blocking so Python worker can drain TX without read() stalling. */
+        libssh2_session_set_blocking(g_session, 0);
+    }
     MP_THREAD_GIL_ENTER();
     return mp_obj_new_int(rc ? -4 : 0);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(ssh_open_shell_obj, 2, 2, ssh_open_shell_mp);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(ssh_open_shell_obj, 2, 2, ssh_open_shell_mp);
 
-STATIC mp_obj_t ssh_read_mp(size_t n_args, const mp_obj_t *args) {
+static mp_obj_t ssh_read_mp(size_t n_args, const mp_obj_t *args) {
     int max_len = mp_obj_get_int(args[0]);
     unsigned char *buf;
     int n = 0;
@@ -269,17 +273,16 @@ STATIC mp_obj_t ssh_read_mp(size_t n_args, const mp_obj_t *args) {
     }
     return mp_obj_new_bytes(buf, n);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(ssh_read_obj, 1, 1, ssh_read_mp);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(ssh_read_obj, 1, 1, ssh_read_mp);
 
-STATIC mp_obj_t ssh_write(mp_obj_t self_in, mp_obj_t data_in) {
-    (void)self_in;
+static mp_obj_t ssh_write_mp(size_t n_args, const mp_obj_t *args) {
     mp_buffer_info_t bufinfo;
     int n = 0;
 
     if (!g_channel) {
         return mp_obj_new_int(0);
     }
-    mp_get_buffer_raise(data_in, &bufinfo, MP_BUFFER_READ);
+    mp_get_buffer_raise(args[0], &bufinfo, MP_BUFFER_READ);
 
     MP_THREAD_GIL_EXIT();
     n = libssh2_channel_write(g_channel, bufinfo.buf, bufinfo.len);
@@ -287,19 +290,18 @@ STATIC mp_obj_t ssh_write(mp_obj_t self_in, mp_obj_t data_in) {
 
     return mp_obj_new_int(n < 0 ? 0 : n);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_2(ssh_write_obj, ssh_write);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(ssh_write_obj, 1, 1, ssh_write_mp);
 
-STATIC mp_obj_t ssh_close_mp(mp_obj_t self_in) {
-    (void)self_in;
+static mp_obj_t ssh_close_mp(void) {
     MP_THREAD_GIL_EXIT();
     ssh_cleanup();
     MP_THREAD_GIL_ENTER();
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_0(ssh_close_obj, ssh_close_mp);
+static MP_DEFINE_CONST_FUN_OBJ_0(ssh_close_obj, ssh_close_mp);
 
 /* loboris-style: ssh.exec("host/command", user, password, port=22, private_key=...) */
-STATIC mp_obj_t ssh_exec_mp(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+static mp_obj_t ssh_exec_mp(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
     enum { ARG_url, ARG_user, ARG_pass, ARG_port, ARG_private_key, ARG_key_passphrase };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_url, MP_ARG_REQUIRED | MP_ARG_OBJ, { .u_obj = MP_OBJ_NULL } },
@@ -329,7 +331,7 @@ STATIC mp_obj_t ssh_exec_mp(size_t n_args, const mp_obj_t *pos_args, mp_map_t *k
     url = mp_obj_str_get_str(args[ARG_url].u_obj);
     slash = strchr(url, '/');
     if (!slash || (slash - url) < 1) {
-        nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError, "url needs host/cmd"));
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("url needs host/cmd"));
     }
     memset(host, 0, sizeof(host));
     memset(cmd, 0, sizeof(cmd));
@@ -385,13 +387,13 @@ STATIC mp_obj_t ssh_exec_mp(size_t n_args, const mp_obj_t *pos_args, mp_map_t *k
     tuple[0] = mp_obj_new_int(rc);
     snprintf(header.buf, SSH_HDR_MAX, "exec %s", host);
     header.len = strlen(header.buf);
-    tuple[1] = mp_obj_new_str_from_vstr(&mp_type_str, &header);
-    tuple[2] = mp_obj_new_str_from_vstr(&mp_type_str, &body);
+    tuple[1] = mp_obj_new_str_from_vstr(&header);
+    tuple[2] = mp_obj_new_str_from_vstr(&body);
     return mp_obj_new_tuple(3, tuple);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(ssh_exec_obj, 3, ssh_exec_mp);
+static MP_DEFINE_CONST_FUN_OBJ_KW(ssh_exec_obj, 3, ssh_exec_mp);
 
-STATIC const mp_rom_map_elem_t ssh_module_globals_table[] = {
+static const mp_rom_map_elem_t ssh_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_ssh) },
     { MP_ROM_QSTR(MP_QSTR_connect), MP_ROM_PTR(&ssh_connect_obj) },
     { MP_ROM_QSTR(MP_QSTR_get_fingerprint), MP_ROM_PTR(&ssh_get_fingerprint_obj) },
@@ -401,7 +403,7 @@ STATIC const mp_rom_map_elem_t ssh_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_close), MP_ROM_PTR(&ssh_close_obj) },
     { MP_ROM_QSTR(MP_QSTR_exec), MP_ROM_PTR(&ssh_exec_obj) },
 };
-STATIC MP_DEFINE_CONST_DICT(ssh_module_globals, ssh_module_globals_table);
+static MP_DEFINE_CONST_DICT(ssh_module_globals, ssh_module_globals_table);
 
 const mp_obj_module_t mp_module_ssh = {
     .base = { &mp_type_module },
