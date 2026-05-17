@@ -1,6 +1,6 @@
 # Hackaday Communicator Badge — SSH client
 
-MicroPython SSH terminal app and native `ssh` module (libssh2) for the [Hackaday Europe Communicator Badge](https://github.com/Hackaday/2025-Communicator_Badge).
+MicroPython SSH terminal app and native `ssh` module (libssh2) for the [Hackaday Europe Communicator Badge](https://github.com/Hackin7/HackadayEurope2026_BadgeHacking_SSH).
 
 ## Repository tree
 
